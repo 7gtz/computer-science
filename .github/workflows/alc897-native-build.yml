@@ -1,0 +1,84 @@
+name: Build native ALC897 AppleALC kext
+
+on:
+  push:
+    branches:
+      - build/alc897-native-applealc
+    paths:
+      - 'alc897/**'
+      - '.github/workflows/alc897-native-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  applealc:
+    runs-on: macos-15
+    timeout-minutes: 55
+    steps:
+      - name: Checkout repair scripts
+        uses: actions/checkout@v4
+
+      - name: Fetch official AppleALC sources
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/acidanthera/AppleALC.git AppleALC
+          git clone --depth 1 https://github.com/acidanthera/MacKernelSDK.git AppleALC/MacKernelSDK
+
+      - name: Bootstrap official Lilu plugin SDK
+        working-directory: AppleALC
+        run: |
+          set -eo pipefail
+          curl -fL --retry 3 -o /tmp/alc897-lilu-bootstrap.sh https://raw.githubusercontent.com/acidanthera/Lilu/master/Lilu/Scripts/bootstrap.sh
+          BUILD_MODE=prebuilt bash /tmp/alc897-lilu-bootstrap.sh
+          test -f Lilu.kext/Contents/Resources/Headers/kern_api.hpp
+
+      - name: Generate ALC897 layouts and confirm source settings
+        run: |
+          set -euo pipefail
+          python3 alc897/patch_applealc.py AppleALC
+          plutil -lint AppleALC/Resources/ALC897/Info.plist
+          plutil -lint AppleALC/Resources/PinConfigs.kext/Contents/Info.plist
+
+      - name: Compile AppleALC (x86-64, Release)
+        working-directory: AppleALC
+        run: |
+          set -o pipefail
+          xcodebuild -jobs 1 -configuration Release -arch x86_64 CODE_SIGNING_ALLOWED=NO build 2>&1 | tee "$RUNNER_TEMP/alc897-build.log"
+
+      - name: Validate compiled kext and codec layouts
+        run: |
+          set -euo pipefail
+          test -f AppleALC/build/Release/AppleALC.kext/Contents/Info.plist
+          test -f AppleALC/build/Release/AppleALC.kext/Contents/MacOS/AppleALC
+          python3 - <<'PY'
+          from pathlib import Path
+          import plistlib
+          info = plistlib.loads(Path('AppleALC/build/Release/AppleALC.kext/Contents/Info.plist').read_bytes())
+          entries = info.get('IOKitPersonalities',{}).get('as.vit9696.AppleALC',{}).get('HDAConfigDefault',[])
+          for layout in (100,101):
+              matches = [e for e in entries if e.get('CodecID')==0x10EC0897 and e.get('LayoutID')==layout]
+              assert len(matches)==1, f'ALC897 layout {layout} missing from compiled kext'
+          print('Validated ALC897 100 and 101 in compiled kext.')
+          PY
+          file AppleALC/build/Release/AppleALC.kext/Contents/MacOS/AppleALC
+          mkdir -p output
+          ditto AppleALC/build/Release/AppleALC.kext output/AppleALC.kext
+          printf 'Custom native ALC897 AppleALC layout 100 and rear-only layout 101.\n' > output/README.txt
+          shasum -a 256 output/AppleALC.kext/Contents/MacOS/AppleALC > output/SHA256.txt
+
+      - name: Upload compiled AppleALC
+        uses: actions/upload-artifact@v4
+        with:
+          name: ALC897-native-AppleALC-kext
+          path: output/
+          if-no-files-found: error
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ALC897-build-log
+          path: ${{ runner.temp }}/alc897-build.log
+          if-no-files-found: ignore
