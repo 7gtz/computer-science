@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   applealc:
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 55
     steps:
       - name: Checkout repair scripts
