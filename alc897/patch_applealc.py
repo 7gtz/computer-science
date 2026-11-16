@@ -78,9 +78,9 @@ def make_platform(base, layout):
     if len(pathmaps) != 1 or pathmaps[0]['PathMapID'] != 1:
         raise ValueError('Unexpected layout 66 path-map container')
     paths = pathmaps[0]['PathMap']
-    if len(paths) != 5 or len(paths[3]) != 2:
+    if len(paths) != 4 or len(paths[2]) != 2:
         raise ValueError('Unexpected layout 66 output grouping')
-    rear, front = copy.deepcopy(paths[3])
+    rear, front = copy.deepcopy(paths[2])
     if [x['NodeID'] for x in rear[0]] != [20, 12, 2]:
         raise ValueError('Rear path no longer matches ALC897 hardware')
     if [x['NodeID'] for x in front[0]] != [27, 15, 5]:
@@ -96,7 +96,7 @@ def make_platform(base, layout):
     rear[0][1]['Amp']['PublishVolume'] = False
     rear[0][1]['Amp']['VolumeInputAmp'] = False
     rear[0][2]['Amp']['MuteInputAmp'] = False
-    paths[3:4] = [[rear], [front]] if layout == 100 else [[rear]]
+    paths[2:3] = [[rear], [front]] if layout == 100 else [[rear]]
     pathmaps[0]['PathMapID'] = layout
     return plat
 
